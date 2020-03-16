@@ -133,21 +133,41 @@ public class DataSource {
     }
 
     public void online(String player, String serviceName, String timeStamp, String address){
-        try(
-            PreparedStatement sql = connection.getPreparedStatement(String.format("INSERT INTO %s VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(`vote_id`) DO UPDATE SET `vote_awarded`=1", tableName));
-            Connection connection = sql.getConnection();
-        ){
-            String voteConcat = player + serviceName + timeStamp + address;
-            sql.setString(1, UUID.nameUUIDFromBytes(voteConcat.getBytes()).toString());
-            sql.setString(2, player);
-            sql.setString(3, serviceName);
-            sql.setString(4, timeStamp);
-            sql.setString(5, address);
-            sql.setBoolean(6, true);
-            sql.executeUpdate();
+        if(config.database.storage.equalsIgnoreCase("sqlite")){
+            try(
+                PreparedStatement sql = connection.getPreparedStatement(String.format("INSERT INTO %s VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(`vote_id`) DO UPDATE SET `vote_awarded`=1", tableName));
+                Connection connection = sql.getConnection();
+            ){
+                String voteConcat = player + serviceName + timeStamp + address;
+                sql.setString(1, UUID.nameUUIDFromBytes(voteConcat.getBytes()).toString());
+                sql.setString(2, player);
+                sql.setString(3, serviceName);
+                sql.setString(4, timeStamp);
+                sql.setString(5, address);
+                sql.setInt(6, 1);
+                sql.executeUpdate();
+            }
+            catch(SQLException e){
+                plugin.getLogger().error("SQL Error", e);
+            }
         }
-        catch(SQLException e){
-            plugin.getLogger().error("SQL Error", e);
+        else {
+            try(
+                PreparedStatement sql = connection.getPreparedStatement(String.format("INSERT INTO %s VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE `vote_awarded`=1", tableName));
+                Connection connection = sql.getConnection();
+            ){
+                String voteConcat = player + serviceName + timeStamp + address;
+                sql.setString(1, UUID.nameUUIDFromBytes(voteConcat.getBytes()).toString());
+                sql.setString(2, player);
+                sql.setString(3, serviceName);
+                sql.setString(4, timeStamp);
+                sql.setString(5, address);
+                sql.setInt(6, 1);
+                sql.executeUpdate();
+            }
+            catch(SQLException e){
+                plugin.getLogger().error("SQL Error", e);
+            }
         }
     }
 
