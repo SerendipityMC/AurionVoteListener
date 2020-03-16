@@ -43,7 +43,7 @@ public class DataSource {
     private synchronized void prepareTable(){
         try{
             String createTableTotal = "CREATE TABLE `" + tableTotal + "` (`IGN` varchar(32) NOT NULL, `votes` int(10) DEFAULT 0, `lastvoted` BIGINT(16) DEFAULT 0, PRIMARY KEY (`IGN`));";
-            String createTableQueue = "CREATE TABLE `" + tableQueue + "` (`IGN` varchar(32) NOT NULL,`service` varchar(64), `timestamp` varchar(32), `ip` varchar(200));";
+            String createTableQueue = "CREATE TABLE `" + tableQueue + "` (`IGN` varchar(32) NOT NULL,`service` varchar(64), `timestamp` varchar(32), `ip` varchar(200), PRIMARY KEY (`timestamp`));";
             if(!connection.tableExist(tableTotal)){
                 connection.executeStatement(createTableTotal);
                 connection.getStatement().close();
@@ -182,7 +182,7 @@ public class DataSource {
 
     public void offline(String player, String serviceName, String timeStamp, String address){
         try(
-            PreparedStatement sql = connection.getPreparedStatement(String.format("INSERT INTO %s VALUES (?, ?, ?, ?)", tableQueue));
+            PreparedStatement sql = connection.getPreparedStatement(String.format("INSERT IGNORE INTO %s VALUES (?, ?, ?, ?)", tableQueue));
             Connection connection = sql.getConnection();
         ){
             sql.setString(1, player);
@@ -198,7 +198,7 @@ public class DataSource {
 
     public boolean queueUsername(String player){
         try(
-            PreparedStatement sql = connection.getPreparedStatement(String.format("SELECT * FROM %s WHERE IGN=?" , tableQueue));
+            PreparedStatement sql = connection.getPreparedStatement(String.format("SELECT * FROM %s WHERE IGN=?", tableQueue));
             Connection connection = sql.getConnection();
         ){
             sql.setString(1, player);

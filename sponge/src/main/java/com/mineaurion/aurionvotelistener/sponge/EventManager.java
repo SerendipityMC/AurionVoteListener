@@ -36,7 +36,7 @@ public class EventManager {
         }
         else{
             plugin.sendConsoleMessage("The " + player + " is not connected, try to give reward");
-            dataSource.offline(player, vote.getServiceName(), String.valueOf(System.currentTimeMillis()), vote.getAddress());
+            dataSource.offline(player, vote.getServiceName(), vote.getTimeStamp(), vote.getAddress());
         }
 
     }
