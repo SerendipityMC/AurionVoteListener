@@ -7,6 +7,7 @@ import java.io.File;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 public class DataSource {
 
@@ -16,16 +17,14 @@ public class DataSource {
     private DatabaseConnection connection;
 
     private String storageConfig;
-    private String tableTotal;
-    private String tableQueue;
+    private String tableName;
 
 
     public DataSource(AurionVoteListener plugin) throws SQLException{
         this.plugin = plugin;
         this.config = plugin.getConfig();
         storageConfig = config.database.storage;
-        tableTotal = config.database.prefix + config.database.tableTotal;
-        tableQueue = config.database.prefix + config.database.tableQueue;
+        tableName = config.database.prefix + config.database.tableName;
 
         if(storageConfig.equalsIgnoreCase("mysql")){
             connection = new MysqlDatabaseConnection(config);
@@ -42,16 +41,9 @@ public class DataSource {
 
     private synchronized void prepareTable(){
         try{
-            String createTableTotal = "CREATE TABLE `" + tableTotal + "` (`IGN` varchar(32) NOT NULL, `votes` int(10) DEFAULT 0, `lastvoted` BIGINT(16) DEFAULT 0, PRIMARY KEY (`IGN`));";
-            String createTableQueue = "CREATE TABLE `" + tableQueue + "` (`IGN` varchar(32) NOT NULL,`service` varchar(64), `timestamp` varchar(32), `ip` varchar(200), PRIMARY KEY (`timestamp`));";
-            if(!connection.tableExist(tableTotal)){
-                connection.executeStatement(createTableTotal);
-                connection.getStatement().close();
-                connection.getConnection().close();
-                plugin.getLogger().info("Table created");
-            }
-            if(!connection.tableExist(tableQueue)){
-                connection.executeStatement(createTableQueue);
+            String createTable = "CREATE TABLE `" + tableName + "` (`vote_id` varchar(100), `player_id` varchar(32) NOT NULL, `vote_service` varchar(64), `vote_timestamp` varchar(32), `player_ip` varchar(200), `vote_awarded` tinyint(1), PRIMARY KEY (`vote_id`));";
+            if(!connection.tableExist(tableName)){
+                connection.executeStatement(createTable);
                 connection.getStatement().close();
                 connection.getConnection().close();
                 plugin.getLogger().info("Table created");
@@ -66,14 +58,14 @@ public class DataSource {
         int votePlayer = 0;
         try(
             PreparedStatement sql = connection.getConnection().prepareStatement(
-                String.format("SELECT votes FROM %s WHERE `IGN`=?", tableTotal)
+                String.format("SELECT COUNT(*) FROM %s WHERE `player_id`=?", tableName)
             );
             Connection connection = sql.getConnection()
         ){
             sql.setString(1, name);
             try(ResultSet resultSet = sql.executeQuery()){
                 while (resultSet.next()) {
-                    votePlayer = resultSet.getInt("votes");
+                    votePlayer = resultSet.getInt(1);
                 }
             }
         }
@@ -89,15 +81,15 @@ public class DataSource {
         String messageFormat = config.settings.voteTop.format;
         try(
             PreparedStatement sql = connection.getConnection().prepareStatement(
-                    String.format("SELECT * FROM %s ORDER BY `votes` DESC limit ?", tableTotal)
+                    String.format("SELECT *, COUNT(*) AS `total` FROM %s GROUP BY `player_id` ORDER BY `total` DESC limit ?", tableName)
             );
             Connection connection = sql.getConnection();
         ){
             sql.setLong(1, config.settings.voteTop.number);
             try(ResultSet resultSet = sql.executeQuery()) {
                 while (resultSet.next()){
-                    String user = resultSet.getString(1);
-                    String total = String.valueOf(resultSet.getInt(2));
+                    String user = resultSet.getString("player_id");
+                    String total = String.valueOf(resultSet.getInt("total"));
                     message
                         .append(
                             messageFormat
@@ -118,7 +110,7 @@ public class DataSource {
 
     public synchronized void clearTotals(){
         try(
-            PreparedStatement sql = connection.getConnection().prepareStatement(String.format("DELETE FROM `%s`", tableTotal));
+            PreparedStatement sql = connection.getConnection().prepareStatement(String.format("DELETE FROM `%s` WHERE `vote_awarded`=1", tableName));
             Connection connection = sql.getConnection();
         ){
             sql.execute();
@@ -130,7 +122,7 @@ public class DataSource {
 
     public synchronized void clearQueue(){
         try(
-            PreparedStatement sql = connection.getConnection().prepareStatement(String.format("DELETE FROM `%s`", tableQueue));
+            PreparedStatement sql = connection.getConnection().prepareStatement(String.format("DELETE FROM `%s` WHERE `vote_awarded`=0", tableName));
             Connection connection = sql.getConnection();
         ){
             sql.execute();
@@ -140,55 +132,37 @@ public class DataSource {
         }
     }
 
-    public synchronized void voted(String player, int totalVotes, long now){
-        if(config.database.storage.equalsIgnoreCase("sqlite")){
-            try(
-                PreparedStatement sql = connection.getPreparedStatement(
-                    String.format("INSERT OR REPLACE INTO %s (IGN, votes, lastvoted) " + "VALUES (?, (SELECT Case When exists(SELECT 1 FROM %s WHERE IGN=?)THEN ? ELSE ? END), ?)", tableTotal, tableTotal)
-                );
-                Connection connection = sql.getConnection();
-            ) {
-                sql.setString(1, player);
-                sql.setString(2, player);
-                sql.setInt(3, totalVotes);
-                sql.setInt(4, totalVotes + 1);
-                sql.setLong(5, now);
-                sql.executeUpdate();
-            }
-            catch (SQLException e){
-                plugin.getLogger().error("SQL Error", e);
-            }
+    public void online(String player, String serviceName, String timeStamp, String address){
+        try(
+            PreparedStatement sql = connection.getPreparedStatement(String.format("INSERT INTO %s VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(`vote_id`) DO UPDATE SET `vote_awarded`=1", tableName));
+            Connection connection = sql.getConnection();
+        ){
+            String voteConcat = player + serviceName + timeStamp + address;
+            sql.setString(1, UUID.nameUUIDFromBytes(voteConcat.getBytes()).toString());
+            sql.setString(2, player);
+            sql.setString(3, serviceName);
+            sql.setString(4, timeStamp);
+            sql.setString(5, address);
+            sql.setBoolean(6, true);
+            sql.executeUpdate();
         }
-        else {
-            try(
-                PreparedStatement sql = connection.getPreparedStatement(
-                    String.format("INSERT INTO %s (IGN, votes, lastvoted) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE IGN=?, votes=?, lastvoted=?", tableTotal)
-                );
-                Connection connection = sql.getConnection();
-            ) {
-                sql.setString(1, player);
-                sql.setInt(2, totalVotes);
-                sql.setLong(3, now);
-                sql.setString(4, player);
-                sql.setInt(5, totalVotes + 1);
-                sql.setLong(6, now);
-                sql.executeUpdate();
-            }
-            catch (SQLException e){
-                plugin.getLogger().error("SQL Error", e);
-            }
+        catch(SQLException e){
+            plugin.getLogger().error("SQL Error", e);
         }
     }
 
     public void offline(String player, String serviceName, String timeStamp, String address){
         try(
-            PreparedStatement sql = connection.getPreparedStatement(String.format("INSERT IGNORE INTO %s VALUES (?, ?, ?, ?)", tableQueue));
+            PreparedStatement sql = connection.getPreparedStatement(String.format("INSERT IGNORE INTO %s VALUES (?, ?, ?, ?, ?, ?)", tableName));
             Connection connection = sql.getConnection();
         ){
-            sql.setString(1, player);
-            sql.setString(2, serviceName);
-            sql.setString(3, timeStamp);
-            sql.setString(4, address);
+            String voteConcat = player + serviceName + timeStamp + address;
+            sql.setString(1, UUID.nameUUIDFromBytes(voteConcat.getBytes()).toString());
+            sql.setString(2, player);
+            sql.setString(3, serviceName);
+            sql.setString(4, timeStamp);
+            sql.setString(5, address);
+            sql.setBoolean(6, false);
             sql.executeUpdate();
         }
         catch(SQLException e){
@@ -198,7 +172,7 @@ public class DataSource {
 
     public boolean queueUsername(String player){
         try(
-            PreparedStatement sql = connection.getPreparedStatement(String.format("SELECT * FROM %s WHERE IGN=?", tableQueue));
+            PreparedStatement sql = connection.getPreparedStatement(String.format("SELECT * FROM %s WHERE `player_id`=? AND `vote_awarded`=0", tableName));
             Connection connection = sql.getConnection();
         ){
             sql.setString(1, player);
@@ -221,13 +195,13 @@ public class DataSource {
         List<String> service = new ArrayList<String>();
 
         try(
-            PreparedStatement sql = connection.getPreparedStatement(String.format("SELECT service FROM %s WHERE IGN=?", tableQueue));
+            PreparedStatement sql = connection.getPreparedStatement(String.format("SELECT `vote_service` FROM %s WHERE `player_id`=? AND `vote_awarded`=0", tableName));
             Connection connection = sql.getConnection();
         ){
             sql.setString(1, player);
             ResultSet resultSet = sql.executeQuery();
             while (resultSet.next()){
-                service.add(resultSet.getString("service"));
+                service.add(resultSet.getString("vote_service"));
             }
         }
         catch (SQLException e){
@@ -238,7 +212,7 @@ public class DataSource {
 
     public void removeQueue(String player, String service){
         try(
-            PreparedStatement sql = connection.getPreparedStatement(String.format("DELETE FROM %s WHERE IGN=? and service=?", tableQueue));
+            PreparedStatement sql = connection.getPreparedStatement(String.format("UPDATE %s SET `vote_awarded`=1 WHERE `player_id`=? AND `vote_service`=?", tableName));
             Connection connection = sql.getConnection();
         ){
             sql.setString(1, player);
@@ -253,12 +227,12 @@ public class DataSource {
     public List<String> queueAllPlayer(){
         List<String> player = new ArrayList<String>();
         try(
-            PreparedStatement sql = connection.getPreparedStatement(String.format("SELECT IGN FROM `%s`", tableQueue));
+            PreparedStatement sql = connection.getPreparedStatement(String.format("SELECT `player_id` FROM `%s` WHERE `vote_awarded`=0", tableName));
             Connection connection = sql.getConnection();
         ){
             ResultSet resultSet = sql.executeQuery();
             while(resultSet.next()) {
-                player.add(resultSet.getString("IGN"));
+                player.add(resultSet.getString("player_id"));
             }
         }
         catch (SQLException e){

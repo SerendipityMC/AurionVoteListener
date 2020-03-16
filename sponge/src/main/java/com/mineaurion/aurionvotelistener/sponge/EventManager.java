@@ -33,9 +33,10 @@ public class EventManager {
 
         if(target.isPresent()){
             dispatchRewards.giveRewards(target.get(), vote.getServiceName());
+            dataSource.online(player, vote.getServiceName(), vote.getTimeStamp(), vote.getAddress());
         }
         else{
-            plugin.sendConsoleMessage("The " + player + " is not connected, try to give reward");
+            plugin.sendConsoleMessage("The " + player + " is not connected, will add to queue if needed");
             dataSource.offline(player, vote.getServiceName(), vote.getTimeStamp(), vote.getAddress());
         }
 

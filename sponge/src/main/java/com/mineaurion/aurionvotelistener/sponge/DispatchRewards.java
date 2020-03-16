@@ -35,8 +35,6 @@ public class DispatchRewards {
         Set<String> configServices = configRewards.services.keySet();
         //Vote actuel du joueur avant l'execution de recompense
         int voteTotal = dataSource.totalsVote(player.getName());
-        //On rajoute un vote au joueur
-        dataSource.voted(player.getName(), voteTotal + 1, System.currentTimeMillis());
 
         //Retourne un reward suivant le service config ou celui par defaut
         String getService = "DEFAULT";

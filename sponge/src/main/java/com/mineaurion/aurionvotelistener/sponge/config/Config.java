@@ -26,13 +26,11 @@ public class Config {
         @Setting
         public int port = 3306;
         @Setting(comment = "Database name")
-        public String name = "Listener";
+        public String name = "listener_db";
         @Setting
         public String prefix = "";
         @Setting
-        public String tableTotal = "ListenerTotal";
-        @Setting
-        public String tableQueue = "ListenerQueue";
+        public String tableName = "listener_votes";
     }
 
     @Setting
